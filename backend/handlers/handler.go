@@ -4,12 +4,13 @@ import (
 	"backend/database"
 	"backend/models"
 	"errors"
+	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-	"log"
 )
 
 var db *gorm.DB
@@ -38,8 +39,6 @@ func SignUpHandler(db *gorm.DB) gin.HandlerFunc {
 		if err := db.Where("username = ?", input.Username).First(&existing).Error; err == nil {
 			c.JSON(http.StatusConflict, gin.H{"error": "このユーザー名は既に使われています"})
 			return
-
-			log.Println(input.Username)
 
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "データベースエラー"})
@@ -106,21 +105,52 @@ func GetUsersHandler(c *gin.Context) {
 
 func SendMessageHandler(c *gin.Context) {
 	var input struct {
+		RoomID     uint   `json:"room_id"`
 		SenderID   uint   `json:"sender_id"`
 		ReceiverID uint   `json:"receiver_id"`
 		Text       string `json:"text"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
+		log.Println("❌ JSONパースエラー:", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
 		return
 	}
 
-	err := database.SendMessage(db, input.SenderID, input.ReceiverID, input.Text)
+	log.Printf("📤 メッセージ送信リクエスト: from=%d to=%d text=%s", input.SenderID, input.ReceiverID, input.Text)
+
+	err := database.SendMessage(db, input.RoomID, input.SenderID, input.ReceiverID, input.Text)
 	if err != nil {
+		log.Println("🔥 DBエラー:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send message"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Message sent successfully"})
+}
+
+// メッセージ一覧取得
+func GetMessagesHandler(c *gin.Context) {
+	userIDStr := c.Query("user_id")
+	if userIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+		return
+	}
+
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id"})
+		return
+	}
+
+	currentUserID := 1 // 仮置きログインユーザーID
+
+	messages, err := database.GetMessagesBetween(db, uint(currentUserID), uint(userID))
+	if err != nil {
+		log.Printf("GetMessagesHandler error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get messages"})
+		return
+	}
+
+	c.JSON(http.StatusOK, messages)
 }

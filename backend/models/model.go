@@ -8,14 +8,13 @@ import (
 
 type User struct {
 	gorm.Model
-	ID            uint   `gorm:"primaryKey"`
 	Username      string `gorm:"uniqueIndex;not null"`
 	Password_Hash string
 }
 
 type Message struct {
 	gorm.Model
-	ID         uint `gorm:"primaryKey"`
+	RoomID     uint
 	SenderID   uint
 	ReceiverID uint
 	Text       string

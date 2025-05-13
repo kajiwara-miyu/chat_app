@@ -6,8 +6,9 @@ import (
 	"gorm.io/gorm"
 )
 
-func SendMessage(db *gorm.DB, senderID, receiverID uint, text string) error {
+func SendMessage(db *gorm.DB, roomID, senderID, receiverID uint, text string) error {
 	message := models.Message{
+		RoomID:     roomID,
 		SenderID:   senderID,
 		ReceiverID: receiverID,
 		Text:       text,
