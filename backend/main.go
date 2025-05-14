@@ -37,6 +37,8 @@ func InitDB() {
 func main() {
 	InitDB() // DB接続
 
+	handlers.SetDB(db)
+
 	r := gin.Default()
 	r.Use(cors.Default())
 
@@ -45,6 +47,7 @@ func main() {
 	r.POST("/login", handlers.LoginHandler)
 	r.GET("/users", handlers.GetUsersHandler)
 	r.POST("/messages", handlers.SendMessageHandler)
+	r.GET("/messages", handlers.GetMessagesHandler)
 
 	// サーバー起動
 	r.Run(":8080")
