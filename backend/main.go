@@ -58,6 +58,7 @@ func main() {
 	auth.Use(middleware.AuthMiddleware())
 	auth.GET("/me", handlers.MeHandler(db))
 	auth.GET("/users", handlers.GetUsersHandler)
+	auth.GET("/rooms", handlers.GetRoomsHandler(db))
 
 	// サーバー起動
 	r.Run(":8080")
