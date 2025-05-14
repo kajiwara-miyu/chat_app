@@ -22,7 +22,7 @@ func GetMessagesBetween(db *gorm.DB, user1ID, user2ID uint) ([]models.Message, e
 	err := db.
 		Where("(sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
 			user1ID, user2ID, user2ID, user1ID).
-		Order("timestamp asc").
+		Order("created_at asc").
 		Find(&messages).Error
 
 	return messages, err
