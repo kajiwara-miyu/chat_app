@@ -112,16 +112,12 @@ func SendMessageHandler(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
-		log.Println("❌ JSONパースエラー:", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
 		return
 	}
 
-	log.Printf("📤 メッセージ送信リクエスト: from=%d to=%d text=%s", input.SenderID, input.ReceiverID, input.Text)
-
 	err := database.SendMessage(db, input.RoomID, input.SenderID, input.ReceiverID, input.Text)
 	if err != nil {
-		log.Println("🔥 DBエラー:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send message"})
 		return
 	}
