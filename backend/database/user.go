@@ -14,8 +14,8 @@ func CreateUser(db *gorm.DB, username, password string) error {
 	}
 
 	user := models.User{
-		Username:      username,
-		Password_Hash: string(hashed),
+		Username:     username,
+		PasswordHash: string(hashed),
 	}
 
 	return db.Create(&user).Error
@@ -33,6 +33,6 @@ func AuthenticateUser(db *gorm.DB, username, password string) (bool, error) {
 		return false, err
 	}
 
-	err := bcrypt.CompareHashAndPassword([]byte(user.Password_Hash), []byte(password))
+	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
 	return err == nil, err
 }

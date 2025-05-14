@@ -2,6 +2,7 @@ package main
 
 import (
 	"backend/handlers"
+	"backend/middleware"
 	"backend/models"
 
 	"log"
@@ -23,7 +24,7 @@ func InitDB() {
 	}
 
 	// DB接続後のマイグレーションなど
-	err = db.AutoMigrate(&models.User{}, &models.Message{})
+	err = db.AutoMigrate(&models.User{}, &models.Message{}, &models.ChatRoom{}, &models.RoomMember{})
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
@@ -40,14 +41,23 @@ func main() {
 	handlers.SetDB(db)
 
 	r := gin.Default()
-	r.Use(cors.Default())
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:3001"},
+		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowCredentials: true,
+	}))
 
 	// APIエンドポイント設定
 	r.POST("/signup", handlers.SignUpHandler(db))
 	r.POST("/login", handlers.LoginHandler)
-	r.GET("/users", handlers.GetUsersHandler)
 	r.POST("/messages", handlers.SendMessageHandler)
 	r.GET("/messages", handlers.GetMessagesHandler)
+
+	auth := r.Group("/")
+	auth.Use(middleware.AuthMiddleware())
+	auth.GET("/me", handlers.MeHandler(db))
+	auth.GET("/users", handlers.GetUsersHandler)
 
 	// サーバー起動
 	r.Run(":8080")
