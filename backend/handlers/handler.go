@@ -4,7 +4,6 @@ import (
 	"backend/database"
 	"backend/models"
 	"errors"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -202,14 +201,14 @@ func GetUsersHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, users)
 }
 
-//メッセージ送信
+// メッセージ送信
 
 func SendMessageHandler(c *gin.Context) {
 	var input struct {
-		RoomID     uint   `json:"room_id"`
-		SenderID   uint   `json:"sender_id"`
-		ReceiverID uint   `json:"receiver_id"`
-		Text       string `json:"text"`
+		RoomID       uint   `json:"room_id"`
+		SenderID     uint   `json:"sender_id"`
+		Content      string `json:"content"`
+		ThreadRootID *uint  `json:"thread_root_id"` // スレッド型チャットを想定する場合
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -217,7 +216,7 @@ func SendMessageHandler(c *gin.Context) {
 		return
 	}
 
-	err := database.SendMessage(db, input.RoomID, input.SenderID, input.ReceiverID, input.Text)
+	err := database.SendMessage(db, input.RoomID, input.SenderID, input.Content, input.ThreadRootID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send message"})
 		return
@@ -228,25 +227,21 @@ func SendMessageHandler(c *gin.Context) {
 
 // メッセージ一覧取得
 func GetMessagesHandler(c *gin.Context) {
-	userIDStr := c.Query("user_id")
-	log.Println("user_id query param:", userIDStr)
-	if userIDStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+	roomIDStr := c.Query("room_id")
+	if roomIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "room_id is required"})
 		return
 	}
 
-	userID, err := strconv.Atoi(userIDStr)
+	roomID, err := strconv.Atoi(roomIDStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "無効な room_id"})
 		return
 	}
 
-	currentUserID := 1 // 仮置きログインユーザーID
-
-	messages, err := database.GetMessagesBetween(db, uint(currentUserID), uint(userID))
-	if err != nil {
-		log.Printf("GetMessagesHandler error: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get messages"})
+	var messages []models.Message
+	if err := db.Where("room_id = ?", roomID).Order("created_at ASC").Find(&messages).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "メッセージ取得に失敗しました"})
 		return
 	}
 
