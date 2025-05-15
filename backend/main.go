@@ -2,7 +2,6 @@ package main
 
 import (
 	"backend/handlers"
-	"backend/middleware"
 	"backend/models"
 
 	"log"
@@ -55,7 +54,7 @@ func main() {
 	r.GET("/messages", handlers.GetMessagesHandler)
 
 	auth := r.Group("/")
-	auth.Use(middleware.AuthMiddleware())
+	auth.Use(handlers.AuthMiddleware())
 	auth.GET("/me", handlers.MeHandler(db))
 	auth.GET("/users", handlers.GetUsersHandler)
 	auth.GET("/rooms", handlers.GetRoomsHandler(db))
