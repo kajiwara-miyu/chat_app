@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -46,11 +47,13 @@ func GetRoomsHandler(db *gorm.DB) gin.HandlerFunc {
       ORDER BY updated_at DESC
     `, userID, userID).Scan(&rooms).Error
 
+		log.Printf("✅ rooms length = %d", len(rooms))
+
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "ルーム取得に失敗しました"})
 			return
 		}
 
-		c.JSON(http.StatusOK, rooms)
+		c.JSON(http.StatusOK, rooms[:])
 	}
 }

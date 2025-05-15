@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -30,7 +31,7 @@ func CreateRoomHandler(db *gorm.DB) gin.HandlerFunc {
 		SELECT r.id FROM chat_rooms r
 		JOIN room_members m1 ON r.id = m1.room_id
 		JOIN room_members m2 ON r.id = m2.room_id
-		WHERE r.is_group = 0 AND m1.user_id = ? AND m2.user_id = ?
+		WHERE r.is_group = false AND m1.user_id = ? AND m2.user_id = ?
 		GROUP BY r.id
 		HAVING COUNT(DISTINCT m1.user_id) = 1 AND COUNT(DISTINCT m2.user_id) = 1
 	  `, userID, input.PartnerID).Scan(&existingRoomID)
@@ -46,6 +47,7 @@ func CreateRoomHandler(db *gorm.DB) gin.HandlerFunc {
 			CreatedAt: time.Now(),
 		}
 		if err := db.Create(&room).Error; err != nil {
+			log.Println("❌ ルーム作成エラー:", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "ルーム作成に失敗"})
 			return
 		}
