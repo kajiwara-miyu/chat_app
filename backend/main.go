@@ -59,6 +59,7 @@ func main() {
 	auth.GET("/me", handlers.MeHandler(db))
 	auth.GET("/users", handlers.GetUsersHandler)
 	auth.GET("/rooms", handlers.GetRoomsHandler(db))
+	auth.POST("/rooms", handlers.CreateRoomHandler(db))
 
 	// サーバー起動
 	r.Run(":8080")

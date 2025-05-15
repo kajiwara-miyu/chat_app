@@ -2,26 +2,30 @@ package database
 
 import (
 	"backend/models"
+	"time"
 
 	"gorm.io/gorm"
 )
 
-func SendMessage(db *gorm.DB, roomID, senderID, receiverID uint, text string) error {
+// メッセージ送信
+func SendMessage(db *gorm.DB, roomID, senderID uint, content string, threadRootID *uint) error {
 	message := models.Message{
-		RoomID:     roomID,
-		SenderID:   senderID,
-		ReceiverID: receiverID,
-		Text:       text,
+		RoomID:       roomID,
+		SenderID:     senderID,
+		Content:      content,
+		ThreadRootID: threadRootID,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 
 	return db.Create(&message).Error
 }
 
-func GetMessagesBetween(db *gorm.DB, user1ID, user2ID uint) ([]models.Message, error) {
+// ルーム内のメッセージ取得（user1ID, user2ID間ではなくroom_idで取得するように変更推奨）
+func GetMessagesInRoom(db *gorm.DB, roomID uint) ([]models.Message, error) {
 	var messages []models.Message
 	err := db.
-		Where("(sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
-			user1ID, user2ID, user2ID, user1ID).
+		Where("room_id = ?", roomID).
 		Order("created_at asc").
 		Find(&messages).Error
 
