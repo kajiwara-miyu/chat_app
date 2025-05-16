@@ -1,9 +1,13 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 type RoomMember struct {
-	ID       uint      `gorm:"primaryKey" json:"id"`
+	gorm.Model
 	RoomID   uint      `json:"room_id"`
 	UserID   uint      `json:"user_id"`
 	JoinedAt time.Time `json:"joined_at"`

@@ -43,8 +43,7 @@ func CreateRoomHandler(db *gorm.DB) gin.HandlerFunc {
 
 		// 新規作成
 		room := models.ChatRoom{
-			IsGroup:   false,
-			CreatedAt: time.Now(),
+			IsGroup: false,
 		}
 		if err := db.Create(&room).Error; err != nil {
 			log.Println("❌ ルーム作成エラー:", err)
