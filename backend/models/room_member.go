@@ -12,3 +12,7 @@ type RoomMember struct {
 	UserID   uint      `json:"user_id"`
 	JoinedAt time.Time `json:"joined_at"`
 }
+
+type AddMember struct {
+	UserID uint `json:"userId"`
+}

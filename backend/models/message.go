@@ -8,6 +8,6 @@ type Message struct {
 	gorm.Model
 	RoomID       uint   `gorm:"index;not null" json:"id"`
 	SenderID     uint   `gorm:"index;not null" json:"sender_id"`
-	Content      string `json:"content"`
-	ThreadRootID *uint  `json:"thread_root_id"` // スレッド対応用
+	Content      string `gorm:"type:text"json:"content"`
+	ThreadRootID *uint  `gorm:"index"json:"thread_root_id"` // スレッド対応用
 }

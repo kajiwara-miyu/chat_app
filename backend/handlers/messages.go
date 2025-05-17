@@ -9,8 +9,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// メッセージ送信
+// 文字列を uint に変換する
+func parseUint(s string) uint {
+	u64, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0 // または panic(err)
+	}
+	return uint(u64)
+}
 
+// メッセージ送信
 func SendMessageHandler(c *gin.Context) {
 	var input struct {
 		RoomID       uint   `json:"room_id"`
@@ -52,6 +60,70 @@ func GetMessagesHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "メッセージ取得に失敗しました"})
 		return
 	}
+
+	c.JSON(http.StatusOK, messages)
+}
+
+// メッセージ送信（グループ + スレッド対応）
+func SendGroupMessageHandler(c *gin.Context) {
+	roomID := c.Param("roomId")
+	userID := GetCurrentUserID(c)
+
+	var req models.Message
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// ユーザーがそのルームのメンバーか確認
+	var member models.RoomMember
+	if err := db.Where("room_id = ? AND user_id = ?", roomID, userID).First(&member).Error; err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "not a member"})
+		return
+	}
+
+	// thread_root_id が指定されている場合は検証
+	if req.ThreadRootID != nil {
+		var rootMsg models.Message
+		if err := db.First(&rootMsg, *req.ThreadRootID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid thread root ID"})
+			return
+		}
+		if rootMsg.RoomID != parseUint(roomID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "thread message must belong to the same room"})
+			return
+		}
+	}
+
+	msg := models.Message{
+		RoomID:       parseUint(roomID),
+		SenderID:     userID,
+		Content:      req.Content,
+		ThreadRootID: req.ThreadRootID,
+	}
+
+	if err := db.Create(&msg).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to post message"})
+		return
+	}
+
+	c.JSON(http.StatusOK, msg)
+}
+
+// メッセージ一覧取得(グループ)
+func GetGroupMessagesHandler(c *gin.Context) {
+	roomID := c.Param("roomId")
+	userID := GetCurrentUserID(c)
+
+	// ユーザーがそのルームのメンバーか確認
+	var member models.RoomMember
+	if err := db.Where("room_id = ? AND user_id = ?", roomID, userID).First(&member).Error; err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "not a member"})
+		return
+	}
+
+	var messages []models.Message
+	db.Where("room_id = ?", roomID).Order("created_at asc").Find(&messages)
 
 	c.JSON(http.StatusOK, messages)
 }
