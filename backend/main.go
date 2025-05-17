@@ -40,6 +40,8 @@ func main() {
 	handlers.SetDB(db)
 
 	r := gin.Default()
+
+	// CORS設定
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:3001"},
 		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
@@ -47,18 +49,33 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	// APIエンドポイント設定
+	// 認証が不要なAPIエンドポイント
 	r.POST("/signup", handlers.SignUpHandler(db))
 	r.POST("/login", handlers.LoginHandler)
-	r.POST("/messages", handlers.SendMessageHandler)
-	r.GET("/messages", handlers.GetMessagesHandler)
 
+	// 認証が必要なAPIエンドポイント
 	auth := r.Group("/")
 	auth.Use(handlers.AuthMiddleware())
+
+	// 認証情報
 	auth.GET("/me", handlers.MeHandler(db))
-	auth.GET("/users", handlers.GetUsersHandler)
-	auth.GET("/rooms", handlers.GetRoomsHandler(db))
-	auth.POST("/rooms", handlers.CreateRoomHandler(db))
+
+	// ユーザー関連
+	auth.GET("/users", handlers.GetUsersHandler)        // ユーザー一覧取得
+	auth.POST("/users", handlers.AddMemberHandler(db))  //メンバー追加
+	auth.DELETE("/users", handlers.RemoveMemberHandler) //メンバー削除
+
+	// ルーム関連
+	auth.GET("/rooms", handlers.GetRoomHandler(db))      //ルーム一覧取得
+	auth.POST("/rooms", handlers.CreateRoomHandler(db))  //ルーム作成
+	auth.GET("/rooms", handlers.GetGrouproomHandler)     //ルーム一覧取得（グループ）
+	auth.POST("/rooms", handlers.CreateGrouproomHandler) //ルーム作成（グループ）
+
+	// メッセージ関連
+	auth.GET("/messages", handlers.GetMessagesHandler)       // メッセージ取得
+	auth.POST("/messages", handlers.SendMessageHandler)      // メッセージ送信
+	auth.GET("/messages", handlers.GetGroupMessagesHandler)  // メッセージ取得（グループ）
+	auth.POST("/messages", handlers.SendGroupMessageHandler) // メッセージ送信（グループ）
 
 	// サーバー起動
 	r.Run(":8080")

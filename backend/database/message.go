@@ -2,7 +2,6 @@ package database
 
 import (
 	"backend/models"
-	"time"
 
 	"gorm.io/gorm"
 )
@@ -14,8 +13,6 @@ func SendMessage(db *gorm.DB, roomID, senderID uint, content string, threadRootI
 		SenderID:     senderID,
 		Content:      content,
 		ThreadRootID: threadRootID,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
 	}
 
 	return db.Create(&message).Error

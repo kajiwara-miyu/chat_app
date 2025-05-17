@@ -6,6 +6,10 @@ import (
 
 type User struct {
 	gorm.Model
-	Username     string `gorm:"uniqueIndex;not null" json:"username"`
-	PasswordHash string `json:"password_hash"`
+	Username        string `gorm:"uniqueIndex;not null" json:"username"`
+	Email           string
+	PasswordHash    string `json:"password_hash"`
+	ProfileImageURL string
+	ProfileMessage  string
+	IsAdmin         bool
 }

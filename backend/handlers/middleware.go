@@ -12,6 +12,7 @@ import (
 
 var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
+// ユーザー認証
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -52,7 +53,17 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// ユーザーIDを context に追加
-		c.Set("user_id", uint(userID))
+		c.Set("userId", uint(userID))
 		c.Next()
 	}
+}
+
+// 認証ユーザー取得
+func GetCurrentUserID(c *gin.Context) uint {
+	// 例：JWTミドルウェアなどでセットされていると仮定
+	uid, exists := c.Get("userID")
+	if !exists {
+		return 0 // 認証されていない場合
+	}
+	return uid.(uint)
 }
