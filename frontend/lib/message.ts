@@ -22,7 +22,13 @@ export async function fetchMessages(token: string, roomId: number): Promise<Mess
 
   if (!res.ok) throw new Error("メッセージ取得に失敗しました");
 
-  return await res.json(); // メッセージの配列を返す
+  const data = await res.json(); // メッセージの配列を返す
+
+  // ✅ isRead が存在しないときは false に補正（保険）
+  return data.map((msg: Partial<Message> & { isRead?: boolean }) => ({
+    ...msg,
+    isRead: msg.isRead ?? false,
+  }));  
 }
 
 // =========================
@@ -51,3 +57,82 @@ export async function sendMessage(
 
   if (!res.ok) throw new Error("メッセージ送信に失敗しました"); // エラー時には例外をスロー
 }
+
+
+export async function fetchGroupMessages(token: string, roomId: number): Promise<Message[]> {
+  const res = await fetch(`http://localhost:8080/messages/group/${roomId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) throw new Error("メッセージ取得失敗");
+
+  const data = await res.json(); // メッセージの配列を返す
+
+  // ✅ isRead が存在しないときは false に補正（保険）
+  return data.map((msg: any) => ({
+    ...msg,
+    isRead: msg.isRead ?? false,
+  }));
+}
+
+
+//既読の永続化処理
+export function markAllMessagesAsRead(messages: Message[], meId: number, token: string){
+  messages.forEach((msg) => {
+    const hasValidId = typeof msg.id === "number";
+    const isFromPartner = msg.sender_id !== meId;
+    const alreadyRead = msg.isRead;
+  
+    if (!hasValidId || !isFromPartner || alreadyRead) {
+      console.log("⏭️ スキップ理由:", {
+        id: msg.id,
+        sender_id: msg.sender_id,
+        meId,
+        isRead: msg.isRead,
+        room_id: msg.room_id,
+      });
+      return;
+    }
+  
+    console.log("✅ 既読API呼び出し:", msg.id);
+    fetch(`http://localhost:8080/messages/${msg.id}/read`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch((err) =>
+      console.warn(`❌ Failed to mark message ${msg.id} as read`, err)
+    );
+  });
+}  
+
+
+
+export async function updateMessage(id: number, content: string) {
+  const token = localStorage.getItem("token");
+  const res = await fetch(`http://localhost:8080/messages/${id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ content }),
+  });
+
+  if (!res.ok) {
+    throw new Error("編集に失敗しました");
+  }
+}
+
+export async function deleteMessage(id: number) {
+  const token = localStorage.getItem("token");
+  const res = await fetch(`http://localhost:8080/messages/${id}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error("削除に失敗しました");
+  }
+}
+

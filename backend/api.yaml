@@ -144,7 +144,68 @@ paths:
         '200':
           description: 送信成功
 
-  paths:
+  /messages/{id}/read:
+    post:
+      summary: Mark message as read
+      description: 記事を読んだことを記録する
+      tags:
+        - messages
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: integer
+          required: true
+          description: メッセージID
+      responses:
+        '200':
+          description: Successfully marked as read
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+      security:
+        - cookieAuth: []
+  
+  /chat_rooms/{id}/unread_count:
+    get:
+      summary: Get unread message count in chat room
+      description: 指定されたチャットルームにおける未読メッセージ数を取得する
+      tags:
+        - chat_rooms
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: integer
+          required: true
+          description: チャットルームID
+      responses:
+        '200':
+          description: 成功時に未読数を返す
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  unread_count:
+                    type: integer
+                    example: 5
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+      security:
+        - cookieAuth: []
+
   /chat_rooms/{roomId}/members:
     post:
       summary: チャットルームにメンバー追加
@@ -267,3 +328,11 @@ components:
       properties:
         userId:
           type: integer
+
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session_id
+
+

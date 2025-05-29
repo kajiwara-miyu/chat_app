@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "dayjs": "^1.11.13",
+    "emoji-picker-react": "^4.12.2",
     "next": "15.3.2",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-mentions": "^4.4.10"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

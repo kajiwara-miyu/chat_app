@@ -1,6 +1,3 @@
-//❌
-
-
 import { useEffect, useState } from "react";
 import { getRooms } from "../lib/room";
 import { fetchMe } from "../lib/auth";
@@ -14,14 +11,13 @@ export default function RoomAndUserPage() {
   const [me, setMe] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState<string | null>(null);
-  const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
+  const [roomId, setRoomId] = useState<number | null>(null);
 
 
   useEffect(() => {
     const token = localStorage.getItem("token");
+    setToken(token);
     if (!token) return;
-
-    console.log("📦 token in useEffect:", token);
 
     Promise.all([
       getRooms(token),
@@ -36,7 +32,7 @@ export default function RoomAndUserPage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   if (loading) return <p>読み込み中...</p>;
 
@@ -49,10 +45,10 @@ export default function RoomAndUserPage() {
           rooms={rooms}
           onSelect={(room) => {
             console.log("選択されたルーム:", room);
-            setSelectedRoomId(room.room_id); // 選択状態を更新
+            setRoomId(room.room_id); // 選択状態を更新
           }}
           onRoomsUpdate={setRooms}
-          selectedRoomId={selectedRoomId} // ← 必須プロパティを渡す
+          roomId={roomId} // ← 必須プロパティを渡す
       />
 
       </div>

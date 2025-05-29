@@ -11,8 +11,9 @@ type ChatRoom struct {
 }
 
 type GroupChatRoom struct {
-	RoomID    uint    `json:"room_id"`
-	IsGroup   bool    `json:"is_group"`
-	RoomName  *string `json:"room_name"`  // グループチャット用
-	MemberIDs []uint  `json:"member_ids"` // 自分以外のメンバー
+	RoomID      uint    `json:"room_id"`
+	IsGroup     bool    `json:"is_group"`
+	RoomName    *string `json:"room_name"`  // グループチャット用
+	MemberIDs   []uint  `json:"member_ids"` // 自分以外のメンバー
+	LastMessage *string `json:"last_message"`
 }

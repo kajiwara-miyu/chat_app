@@ -7,7 +7,7 @@
 // - ルームの作成/選択、メッセージの取得/送信
 // - 使用コンポーネント: UserAndGroupList, ChatWindow
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/router';
 
 import RoomList from '../components/RoomList';
@@ -17,8 +17,11 @@ import ChatWindow from '../components/ChatWindow'; // メッセージ表示・�
 // 🔹 各種API関数をインポート
 import { fetchMe, logout } from '../lib/auth'; // 認証系
 import { fetchUsers } from '../lib/user'; // ユーザー一覧取得
-import { fetchMessages, sendMessage } from '../lib/message'; // メッセージ取得・送信
+import { fetchMessages, fetchGroupMessages } from '../lib/message'; // メッセージ取得・送信
 import { createRoom, fetchGroupRooms, createGroupRoom, getRooms } from "../lib/room"; // ルーム関連
+import { markAllMessagesAsRead } from "../lib/message"; //既読の永続化処理
+import { updateMessage, deleteMessage } from "../lib/message";
+
 
 
 import { User, Message, Room } from "../types";
@@ -35,11 +38,15 @@ export default function ChatPage() {
   const [groups, setGroups] = useState<Room[]>([]); // グループルーム一覧
   const [selectedUser, setSelectedUser] = useState<User | null>(null); // 選択中の1対1相手
   const [messages, setMessages] = useState<Message[]>([]); // 現在のチャットルームのメッセージ
-  const [text, setText] = useState(''); // 入力中のテキスト
+  const [text, setText] = useState<string>(""); // 入力中のテキスト
   const [roomId, setRoomId] = useState<number | null>(null); // 現在のルームID
   const [currentRoomName, setCurrentRoomName] = useState<string | null>(null); // グループ名など
   const [selectedGroupRoomId, setSelectedGroupRoomId] = useState<number | null>(null); // 選択中のグループID
-  const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
+  const socketRef = useRef<WebSocket | null>(null); // WebSocket接続のためのステート
+  const [imageFile, setImageFile] = useState<File | null>(null);
+
+
+
 
 
   // ======================
@@ -92,80 +99,167 @@ export default function ChatPage() {
     const token = localStorage.getItem("token");
     if (!token) return;
   
-    getRooms(token)
-      .then((rooms) => {
-        // 🔸 ルームIDで重複排除 ＋ メッセージがあるルームのみ抽出
-        const filtered = rooms.filter(
+    Promise.all([getRooms(token), fetchGroupRooms(token)])
+      .then(([dmRooms = [], groupRooms = []]) => {
+        // 🔸 DMルーム（is_group: false）とグループルーム（is_group: true）を結合
+        const combined = [...dmRooms, ...groupRooms];
+  
+        // 🔹 メッセージがあるルームのみ抽出 & 重複排除
+        const filtered = combined.filter(
           (room, index, self) =>
             index === self.findIndex((r) => r.room_id === room.room_id) &&
             room.last_message && room.last_message.trim() !== ""
         );
-        setRooms(filtered);
+  
+        setRooms(filtered); // 全体一覧にセット
+        setGroups(groupRooms); // グループ用に別途保存
       })
-      .catch((err) => console.error("ルーム取得失敗", err));
+      .catch((err) => console.error("ルーム取得失敗:", err));
   }, []);
   
+  // ======================
+  // 🔹 WebSocket 接続とメッセージの受信
+  // ======================
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    console.log("📦 JWT token", token)
+    if (!token || roomId == null) {
+      console.warn("🛑 WebSocket接続条件が未満足 (token or roomId missing)");
+      return;
+    }
+  
+    const ws = new WebSocket(`ws://localhost:8080/ws?token=${token}&room_id=${roomId}`);
+
+    socketRef.current = ws;
+  
+    ws.onopen = () => {console.log("✅ WebSocket connected");socketRef.current = ws}
+    ws.onclose = () => console.warn("❌ WebSocket closed")
+    ws.onerror = (e) => console.error("💥 WebSocket error", e)
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log("📥 WS受信:", data);
+    
+      if (data.type === "message") {
+        // メッセージ受信時の重複防止処理
+        setMessages((prev) => {
+          // data.id が存在しないケースも考慮して明示的に型変換＋nullチェック
+          const exists = prev.some((msg) => Number(msg.id) === Number(data.id));
+    
+          console.log("📩 受信:", data.id, typeof data.id);
+          console.log("💡 現在のIDs:", prev.map((m) => m.id));
+          console.log("✅ 既存と重複？", exists);
+    
+          return exists ? prev : [...prev, data];
+        });
+    
+      } else if (data.type === "read") {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === data.message_id ? { ...msg, isReadByOthers: true } : msg
+          )
+        );
+    
+      } else if (data.type === "update") {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === data.message_id ? { ...msg, content: data.new_content } : msg
+          )
+        );
+    
+      } else if (data.type === "delete") {
+        setMessages((prev) =>
+          prev.filter((msg) => msg.id !== data.message_id)
+        );
+      }
+    };
+    
+    return () => {
+      ws.close();
+    };
+    
+
+}, [roomId]); // 🔑 ルーム変更時に再接続
 
   // ======================
   // 🔹 選択中ルームのメッセージ取得
   // ======================
-  useEffect(() => {
-    setMessages([]);
-    
-    const token = localStorage.getItem('token');
-    if (!token || roomId == null) return;
 
-    fetchMessages(token, roomId)
-      .then(setMessages)
-      .catch(console.error);
-  }, [roomId]);
+useEffect(() => {
+  const token = localStorage.getItem("token");
+  if (!token) {
+    console.warn("🚫 トークンが見つかりません");
+    return;
+  }
+
+  if (!me || roomId == null || !Array.isArray(messages)) {
+    console.warn("🚫 既読処理スキップ（me, roomId, messages 未準備）");
+    return;
+  }
+
+  console.log("📍 既読処理開始: roomId=", roomId, "me.id=", me.id);
+
+  markAllMessagesAsRead(messages, me.id, token); // 🔽 永続化処理本体
+}, [roomId, me, messages.length]);
 
   // ======================
   // 🔹 1対1チャット開始 or 再開時の処理
   // ======================
-  const handleStartChat = async (user: User) => {
+  const handleSelectUser = async (user: User) => {
     if (!me) return;
     const token = localStorage.getItem("token");
     if (!token) return;
-
+  
     try {
       setMessages([]);
       setSelectedUser(user);
       setCurrentRoomName(null);
       setSelectedGroupRoomId(null);
-
-      // ✅ バックエンドでルームの存在チェック + 作成を一括で行う
+  
       const targetRoomId = await createRoom(token, user.id);
       setRoomId(targetRoomId);
-
-      // 🔸 メッセージ取得
-      const messages = await fetchMessages(token, targetRoomId);
-      setMessages(messages);
+  
+      const fetchedMessages = await fetchMessages(token, targetRoomId);
+  
+      setMessages((prev) => {
+        const existingIds = new Set(prev.map((m) => m.id));
+        const filtered = fetchedMessages.filter((m) => !existingIds.has(m.id));
+        return [...prev, ...filtered];
+      });
+  
     } catch (err) {
       console.error("ルーム作成または取得失敗:", err);
     }
   };
+  
 
   // ======================
   // 🔹 グループチャットルームを開くとき
   // ======================
-  const handleEnterGroup = async (room: Room) => {
+  const handleSelectGroup = async (room: Room) => {
     setSelectedUser(null);
     setSelectedGroupRoomId(room.room_id);
     setCurrentRoomName(room.room_name);
-    setMessages([]);
-
+    setMessages([]); // 一旦空に（UI的にはOK）
+  
     const token = localStorage.getItem("token");
     if (!token) return;
-
+  
     try {
       setRoomId(room.room_id);
-      const messages = await fetchMessages(token, room.room_id);
-      setMessages(messages);
+  
+      const fetchedMessages = await fetchGroupMessages(token, room.room_id);
+  
+      setMessages((prev) => {
+        const prevIds = new Set(prev.map((msg) => msg.id));
+        const newOnes = fetchedMessages.filter((msg) => !prevIds.has(msg.id));
+        return [...prev, ...newOnes];
+      });
+  
     } catch (err) {
       console.error("グループチャット読み込みエラー:", err);
     }
   };
+  
 
   // ======================
   // 🔹 新しいグループチャットを作成する
@@ -185,6 +279,7 @@ export default function ChatPage() {
       setCurrentRoomName(newGroup.room_name);
 
       const messages = await fetchMessages(token, newGroup.room_id);
+      console.log("📄 fetchMessages:", messages.map((m) => m.id));
       setMessages(messages);
     } catch (err) {
       console.error("グループ作成エラー:", err);
@@ -195,20 +290,108 @@ export default function ChatPage() {
   // 🔹 メッセージ送信
   // ======================
   const handleSend = async () => {
-    if (!text || !me || !roomId) return;
-    const token = localStorage.getItem('token');
+    if ((!text.trim() && !imageFile) || !me || !roomId) return;
+  
+    const token = localStorage.getItem("token");
     if (!token) return;
-
-    try {
-      await sendMessage(token, roomId, me.id, text); // 🔸 APIでメッセージ送信
+  
+    const ws = socketRef.current;
+  
+    // ✅ テキストメッセージの送信（WebSocket経由）
+    if (text.trim()) {
+      const message = {
+        room_id: roomId,
+        content: text,
+        created_at: new Date().toISOString(),
+        sender_name: me.username,
+        sender_id: me.id,
+      };
+  
+      if (ws instanceof WebSocket && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(message));
+      }
+  
+      try {
+        await fetch('http://localhost:8080/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(message),
+        });
+      } catch (err) {
+        console.error("テキスト送信失敗:", err);
+      }
+  
       setText('');
-      const updated = await fetchMessages(token, roomId); // 🔸 メッセージ再取得
-      setMessages(updated);
-    } catch (err) {
-      console.error('送信エラー:', err);
+    }
+  
+    // ✅ ファイルがある場合はアップロード
+    if (imageFile) {
+      const formData = new FormData();
+      formData.append("file", imageFile);
+      formData.append("room_id", roomId.toString());
+      formData.append("sender_id", me.id.toString());
+  
+      try {
+        const res = await fetch("http://localhost:8080/messages/image", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        });
+  
+        const newMessage: Message = await res.json();
+        setMessages((prev) => [...prev, newMessage]);
+      } catch (err) {
+        console.error("画像アップロード失敗:", err);
+      }
+  
+      setImageFile(null); // ✅ ファイルリセット
     }
   };
-
+  
+  
+  const handleEdit = async (message: Message) => {
+    const newContent = prompt("新しい内容を入力してください", message.content);
+    if (!newContent || newContent === message.content) return;
+  
+    try {
+      await updateMessage(message.id, newContent);
+  
+      const token = localStorage.getItem("token");
+      if (token && roomId) {
+        const updatedMessages = await fetchMessages(token, roomId);
+        setMessages(updatedMessages);
+      }
+    } catch (err) {
+      console.error("編集失敗", err);
+      alert("編集できませんでした");
+    }
+  };
+  
+  
+  const handleDelete = async (id: number) => {
+    if (!confirm("本当に削除しますか？")) return;
+  
+    try {
+      await deleteMessage(id); // メッセージ削除（サーバーへ）
+  
+      const token = localStorage.getItem("token");
+      if (token && roomId) {
+        const updatedMessages = await fetchMessages(token, roomId); // 最新メッセージを取得
+        setMessages(updatedMessages); // 画面を更新
+      }
+    } catch (err) {
+      console.error("削除失敗:", err);
+      alert("削除に失敗しました");
+    }
+  };
+  
+  
+  
   // ======================
   // 🔹 ログアウト処理
   // ======================
@@ -244,123 +427,98 @@ export default function ChatPage() {
           ログアウト
         </button>
       </div>
+  
+      {/* メイン画面（左：ユーザー＋グループ、中：ルーム一覧、右：チャット画面） */}
+      <div style={{ display: 'flex', flex: 1, backgroundColor: '#fafafa' }}>
+        
+        {/* 🔹 左カラム：ユーザー・グループ一覧 */}
+        <div style={{
+          width: '22%',
+          borderRight: '1px solid #ccc',
+          padding: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+          height: 'calc(100vh - 72px)',
+          overflow: 'hidden'
+        }}>
+          <UserAndGroupList
+            users={users}
+            groups={groups}
+            onSelectUser={handleSelectUser}
+            onSelectGroup={handleSelectGroup}
+            selectedUserId={selectedUser?.id ?? null}
+            selectedGroupRoomId={selectedGroupRoomId}
+            onCreateGroup={handleCreateGroup}
+          />
+      </div>
+  
+        {/* 🔹 中央カラム：チャットルーム一覧 */}
+<div style={{
+  width: '28%',
+  borderRight: '1px solid #ccc',
+  padding: 16,
+  display: 'flex',
+  flexDirection: 'column',
+  height: 'calc(100vh - 72px)'
+}}>
+  <RoomList
+    rooms={rooms}
+    roomId={roomId}
+    onSelect={(room) => {
+      console.log("✅ ルーム選択:", room.room_id);
+      setSelectedUser(null);
+      setSelectedGroupRoomId(null);
+      setCurrentRoomName(room.partner_name || room.room_name || '');
+      setRoomId(room.room_id);
 
-
-{/* メイン画面（左：ユーザー＋グループ、中：ルーム一覧、右：チャット画面） */}
-<div style={{ display: 'flex', flex: 1, backgroundColor: '#fafafa' }}>
-  {/* 🔹 左カラム：ユーザー・グループ一覧 */}
-  <div style={{ width: '25%', borderRight: '1px solid #ccc', padding: 16 }}>
-    <div style={{ maxHeight: '45vh', overflowY: 'auto', marginBottom: 20 }}>
-      <h3 style={{ fontSize: 18, marginBottom: 10 }}>ユーザー一覧</h3>
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-        {users.map((user) => (
-          <li key={user.id} style={{ marginBottom: 10 }}>
-            <button
-              onClick={() => {
-                handleStartChat(user);
-                setSelectedGroupRoomId(null);
-              }}
-              style={{
-                width: '100%',
-                padding: 10,
-                border: user.id === selectedUser?.id ? '2px solid #339af0' : '1px solid #ccc',
-                backgroundColor: user.id === selectedUser?.id ? '#d0ebff' : '#fff',
-                borderRadius: 6,
-                cursor: 'pointer',
-                fontSize: 14
-              }}
-            >
-              {user.username}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
-
-    <div style={{ maxHeight: '45vh', overflowY: 'auto' }}>
-      <h3 style={{ fontSize: 18, marginBottom: 10 }}>グループ一覧</h3>
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-        {groups.map((group) => (
-          <li key={group.room_id} style={{ marginBottom: 10 }}>
-            <button
-              onClick={() => handleEnterGroup(group)}
-              style={{
-                width: '100%',
-                padding: 10,
-                border: group.room_id === selectedGroupRoomId ? '2px solid #339af0' : '1px solid #ccc',
-                backgroundColor: group.room_id === selectedGroupRoomId ? '#d0ebff' : '#fff',
-                borderRadius: 6,
-                cursor: 'pointer',
-                fontSize: 14
-              }}
-            >
-              {group.room_name?.trim() || '（無名グループ）'}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
-  </div>
-
-  {/* 🔹 中央カラム：チャットルーム一覧 */}
-  <div style={{ width: '25%', borderRight: '1px solid #ccc', padding: 16 }}>
-    <div style={{ maxHeight: '90vh', overflowY: 'auto' }}>
-      <h3 style={{ fontSize: 18, marginBottom: 10 }}>チャットルーム一覧</h3>
-      <ul style={{ listStyle: 'none', padding: 0 }}>
-        {rooms.map((room) => (
-          <li key={room.room_id} style={{ marginBottom: 10 }}>
-            <button
-              onClick={() => {
-                setSelectedUser(null);
-                setSelectedGroupRoomId(null);
-                setCurrentRoomName(room.partner_name || room.room_name || '');
-                setRoomId(room.room_id);
-                fetchMessages(localStorage.getItem('token')!, room.room_id)
-                  .then(setMessages)
-                  .catch(console.error);
-              }}
-              style={{
-                width: '100%',
-                padding: 10,
-                border: room.room_id === roomId ? '2px solid #339af0' : '1px solid #ccc',
-                backgroundColor: room.room_id === roomId ? '#d0ebff' : '#fff',
-                borderRadius: 6,
-                cursor: 'pointer',
-                fontSize: 14,
-                textAlign: 'left'
-              }}
-            >
-              <strong>{room.partner_name || room.room_name || `ルームID: ${room.room_id}`}</strong>
-              <div style={{ fontSize: 12, color: '#555' }}>
-                {room.last_message || '未送信'}
-              </div>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
-  </div>
-
-  {/* 🔹 右カラム：チャット画面 */}
-  <div style={{ flex: 1, padding: 24 }}>
-    {(roomId || selectedUser) && me ? (
-      <ChatWindow
-        messages={messages}
-        selectedUser={selectedUser}
-        me={me}
-        roomName={selectedUser ? undefined : currentRoomName || undefined}
-        text={text}
-        setText={setText}
-        onSend={handleSend}
-      />
-    ) : (
-      <p style={{ fontSize: '16px', color: '#888' }}>
-        ユーザーまたはグループを選択してください。
-      </p>
-    )}
-  </div>
+      const token = localStorage.getItem('token');
+    if (token) {
+      fetchMessages(token, room.room_id)
+        .then(setMessages)
+        .catch(console.error);
+    } else {
+      console.warn("⚠️ トークンが取得できませんでした");
+    }
+  }}
+    onRoomsUpdate={(updatedRooms) => setRooms(updatedRooms)}
+  />
 </div>
 
+  
+        {/* 🔹 右カラム：チャット画面 */}
+        <div style={{
+          flex: 1,
+          padding: 24,
+          overflowY: 'auto',
+          height: 'calc(100vh - 72px)'
+        }}>
+          {(roomId || selectedUser) && me ? (
+            <ChatWindow
+              messages={messages}
+              selectedUser={selectedUser}
+              roomId={roomId}
+              me={me}
+              roomName={selectedUser ? undefined : currentRoomName || undefined}
+              text={text}
+              setText={setText}
+              onSend={handleSend}
+              setMessages={setMessages}
+              onEdit={handleEdit} onDelete={handleDelete}
+            />
+          ) : (
+            <p style={{
+              fontSize: '20px',
+              color: '#888',
+              textAlign: 'center',
+              marginTop: '20%',
+            }}>
+              💬 ユーザーまたはグループを選択してください
+            </p>
+            
+          )}
+        </div>
+      </div>
     </div>
   );
-}
+}  

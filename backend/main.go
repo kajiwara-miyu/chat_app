@@ -14,38 +14,40 @@ import (
 
 var db *gorm.DB
 
-func InitDB() {
+func InitDB() *gorm.DB {
 	dsn := "host=db user=user password=password dbname=chat_app_db port=5432 sslmode=disable"
 	var err error
 	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		log.Fatal("Failed to connect to the database:", err)
+		log.Fatal("❌ DB接続失敗:", err)
 	}
 
 	// DB接続後のマイグレーションなど
-	err = db.AutoMigrate(&models.User{}, &models.Message{}, &models.ChatRoom{}, &models.RoomMember{})
+	err = db.AutoMigrate(&models.User{}, &models.Message{}, &models.ChatRoom{}, &models.RoomMember{}, &models.MessageRead{})
 	if err != nil {
-		log.Fatal("Failed to migrate database:", err)
+		log.Fatal("❌Failed to migrate database:", err)
 	}
 
-	// handlers に DB を渡す（DI）
-	handlers.SetDB(db)
-
-	log.Println("Connected to the database!")
+	log.Println("✅Connected to the database!")
+	return db
 }
 
 func main() {
-	InitDB() // DB接続
+	db := InitDB() // DB接続
 
 	handlers.SetDB(db)
+
+	// ✅ WebSocket中継処理を並列で起動
+	go handlers.StartBroadcast()
 
 	r := gin.Default()
 
 	// CORS設定
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:3001"},
-		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 	}))
 
@@ -76,7 +78,21 @@ func main() {
 	auth.POST("/messages", handlers.SendMessageHandler)            // メッセージ送信
 	auth.GET("/messages/group", handlers.GetGroupMessagesHandler)  // メッセージ取得（グループ）
 	auth.POST("/messages/group", handlers.SendGroupMessageHandler) // メッセージ送信（グループ）
+	auth.POST("/messages/:id/read", handlers.MarkMessageAsRead)    // ✅ 既読記録
+	auth.POST("/messages/read_all", handlers.MarkAllMessagesAsRead)
+	// メッセージ編集・削除
+	auth.PATCH("/messages/:id", handlers.UpdateMessageHandler(db))
+	auth.DELETE("/messages/:id", handlers.DeleteMessageHandler(db))
 
-	// サーバー起動
-	r.Run(":8080")
+	//メンション
+	r.GET("/mentions", handlers.GetMentionsHandler)
+
+	r.POST("/messages/image", handlers.UploadImageHandler) //画像
+	r.Static("/uploads", "./uploads")                      //静的ファイル配信の設定（画像表示用）
+
+	// ✅ WebSocket エンドポイント (Ginで登録)
+	r.GET("/ws", gin.WrapF(handlers.HandleWebSocket(db)))
+
+	log.Println("🚀 Server running on http://localhost:8080")
+	r.Run(":8080") // ← GinのみでListen
 }

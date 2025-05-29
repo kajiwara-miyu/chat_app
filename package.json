@@ -1,5 +1,7 @@
 {
   "dependencies": {
-    "swr": "^2.3.3"
+    "emoji-picker-react": "^4.12.2",
+    "swr": "^2.3.3",
+    "ws": "^8.18.2"
   }
 }

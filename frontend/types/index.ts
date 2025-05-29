@@ -9,6 +9,7 @@
 export type User = {
   id: number;           // ユーザーID
   username: string;     // ユーザー名（表示名）
+  furigana?: string;
 };
 
 // =========================
@@ -22,7 +23,15 @@ export type Message = {
   sender_id: number;      // 送信者のユーザーID
   content: string;        // メッセージ本文
   created_at: string;     // 作成日時（ISO文字列）
-  sender_name?: string;   // 任意: フロントで使う表示用送信者名（サーバーが返す場合あり）
+  sender_name: string;   // 任意: フロントで使う表示用送信者名（サーバーが返す場合あり）
+  isRead?: boolean;
+  isReadByOthers: boolean; 
+  attachments?: {fileName: string}[];
+};
+
+export type Attachment = {
+  fileName: string;
+  createdAt: string;
 };
 
 // =========================
@@ -38,4 +47,5 @@ export type Room = {
   is_group: boolean;       // グループチャットかどうかのフラグ
   last_message: string;    // ルーム内の最新メッセージ内容（ルーム一覧表示用）
   member_ids: number[];    // ルームに所属しているユーザーIDの配列（グループ/1対1共通）
+  furigana?: string;
 };

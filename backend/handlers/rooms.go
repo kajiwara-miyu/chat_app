@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -133,6 +132,25 @@ func GetRoomHandler(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		for i := range rooms {
+			if rooms[i].LastMessage == "" {
+				// そのルームの最新メッセージを取得
+				var msg models.Message
+				err := db.
+					Where("room_id = ?", rooms[i].RoomID).
+					Order("created_at DESC").
+					First(&msg).Error
+				if err == nil {
+					var attachments []models.MessageAttachment
+					db.Where("message_id = ?", msg.ID).Find(&attachments)
+
+					if len(attachments) > 0 {
+						rooms[i].LastMessage = "📷 画像メッセージ"
+					}
+				}
+			}
+		}
+
 		c.JSON(http.StatusOK, rooms)
 	}
 }
@@ -187,9 +205,8 @@ func CreateGrouproomHandler(c *gin.Context) {
 // 呼び出し元: lib/room.ts の fetchGroupRooms() → ChatPage.tsx や UserAndGroupList.tsx など
 func GetGrouproomHandler(c *gin.Context) {
 	userID := GetCurrentUserID(c)
-	fmt.Println("🧪 userID from JWT:", userID)
 
-	// 🔸 自分が所属するルームIDを取得
+	// 1. 自分が所属するルームIDを取得
 	var roomIDs []uint
 	if err := db.
 		Model(&models.RoomMember{}).
@@ -199,7 +216,7 @@ func GetGrouproomHandler(c *gin.Context) {
 		return
 	}
 
-	// 🔸 グループルーム（is_group = true）を抽出
+	// 2. グループルーム（is_group = true）を取得
 	var rooms []models.ChatRoom
 	if err := db.
 		Where("id IN ? AND is_group = ?", roomIDs, true).
@@ -208,7 +225,7 @@ func GetGrouproomHandler(c *gin.Context) {
 		return
 	}
 
-	// 🔸 ルームごとのメンバー情報を取得
+	// 3. ルームごとのメンバー情報を取得
 	var roomMembers []models.RoomMember
 	if err := db.
 		Where("room_id IN ?", roomIDs).
@@ -217,20 +234,59 @@ func GetGrouproomHandler(c *gin.Context) {
 		return
 	}
 
-	// 🔸 room_id ごとにメンバーIDをまとめる
+	// 4. 最新メッセージを取得
+	type LastMessage struct {
+		RoomID      uint
+		LastMessage string
+	}
+
+	var messages []LastMessage
+	db.Raw(`
+		SELECT m.room_id, m.content as last_message
+		FROM messages m
+		INNER JOIN (
+			SELECT room_id, MAX(created_at) as latest
+			FROM messages
+			WHERE room_id IN ?
+			GROUP BY room_id
+		) sub ON m.room_id = sub.room_id AND m.created_at = sub.latest
+	`, roomIDs).Scan(&messages)
+
+	// 5. map[room_id] = content に変換
+	messageMap := make(map[uint]string)
+	for _, msg := range messages {
+		// 空メッセージ（画像のみ）なら添付ファイルを確認
+		if msg.LastMessage == "" {
+			var m models.Message
+			if err := db.Where("room_id = ?", msg.RoomID).Order("created_at DESC").First(&m).Error; err == nil {
+				var attachments []models.MessageAttachment
+				db.Where("message_id = ?", m.ID).Find(&attachments)
+				if len(attachments) > 0 {
+					messageMap[msg.RoomID] = "📷 画像メッセージ"
+					continue
+				}
+			}
+		}
+		// 通常のメッセージ（または添付なかった場合）
+		messageMap[msg.RoomID] = msg.LastMessage
+	}
+
+	// 6. room_id ごとにメンバーIDをまとめる
 	memberMap := make(map[uint][]uint)
 	for _, rm := range roomMembers {
 		memberMap[rm.RoomID] = append(memberMap[rm.RoomID], rm.UserID)
 	}
 
-	// 🔸 レスポンス形式に変換して返す
+	// 7. レスポンス形式に変換して返す
 	response := []models.GroupChatRoom{}
 	for _, r := range rooms {
+		msg := messageMap[r.ID]
 		response = append(response, models.GroupChatRoom{
-			RoomID:    r.ID,
-			RoomName:  r.RoomName,
-			IsGroup:   r.IsGroup,
-			MemberIDs: memberMap[r.ID],
+			RoomID:      r.ID,
+			RoomName:    r.RoomName,
+			IsGroup:     r.IsGroup,
+			MemberIDs:   memberMap[r.ID],
+			LastMessage: &msg,
 		})
 	}
 

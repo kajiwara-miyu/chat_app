@@ -49,7 +49,9 @@ export async function getRooms(token: string): Promise<Room[]> {
   }
 
   const data = await res.json();
-  return data; // 1対1ルームの配列を返す
+  console.log("📦 getRooms response:", data);
+
+  return Array.isArray(data) ? data : (data?.rooms ?? []);
 }
 
 // =========================
@@ -69,7 +71,7 @@ export async function fetchGroupRooms(token: string): Promise<Room[]> {
   });
 
   if (!res.ok) {
-    console.error("❌ fetchGroupRooms failed:", await res.text());
+    console.error("fetchGroupRooms failed:", await res.text());
     throw new Error("グループチャット一覧の取得に失敗しました");
   }
 

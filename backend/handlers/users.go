@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"backend/database"
 	"backend/models"
 	"log"
 	"net/http"
@@ -12,12 +11,18 @@ import (
 	"gorm.io/gorm"
 )
 
-//ユーザー一覧
-
+// ユーザー一覧
 func GetUsersHandler(c *gin.Context) {
-	users, err := database.GetUsers(db)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get users"})
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	var users []models.User
+	if err := db.Find(&users).Error; err != nil {
+		log.Println("❌ User fetch failed:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "DB error"})
 		return
 	}
 
