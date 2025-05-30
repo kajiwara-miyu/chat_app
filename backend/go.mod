@@ -11,7 +11,6 @@ require (
 	gorm.io/gorm v1.26.1
 )
 
-require github.com/go-chi/chi/v5 v5.2.1 // indirect
 
 require (
 	github.com/bytedance/sonic v1.13.2 // indirect
