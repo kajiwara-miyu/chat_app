@@ -140,10 +140,15 @@ export default function ChatPage() {
       console.log("📥 WS受信:", data);
     
       if (data.type === "message") {
+        if (!data.hasOwnProperty("isReadByOthers")) {
+          data.isReadByOthers = false;
+        }
+  
+        const newId = Number(data.id);
         // メッセージ受信時の重複防止処理
         setMessages((prev) => {
           // data.id が存在しないケースも考慮して明示的に型変換＋nullチェック
-          const exists = prev.some((msg) => Number(msg.id) === Number(data.id));
+          const exists = prev.some((msg) => Number(msg.id) === newId);
     
           console.log("📩 受信:", data.id, typeof data.id);
           console.log("💡 現在のIDs:", prev.map((m) => m.id));
@@ -278,9 +283,13 @@ useEffect(() => {
       setRoomId(newGroup.room_id);
       setCurrentRoomName(newGroup.room_name);
 
-      const messages = await fetchMessages(token, newGroup.room_id);
-      console.log("📄 fetchMessages:", messages.map((m) => m.id));
-      setMessages(messages);
+      const fetchedMessages = await fetchMessages(token, newGroup.room_id);
+      setMessages((prev) => {
+      const prevIds = new Set(prev.map((m) => m.id));
+      const merged = [...prev, ...fetchedMessages.filter((m) => !prevIds.has(m.id))];
+      return merged;
+      });
+
     } catch (err) {
       console.error("グループ作成エラー:", err);
     }
